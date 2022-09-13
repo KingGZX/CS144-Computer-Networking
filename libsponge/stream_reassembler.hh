@@ -6,6 +6,21 @@
 #include <cstdint>
 #include <string>
 
+//利用操作系统里回收内存碎片的知识，建立一条乱序数据的链表
+struct Node{
+  string _data;
+  size_t blockstart;
+  size_t blockend;
+  bool eof;
+  Node* next;
+  Node(string data):_data(data), blockstart(0), blockend(0), eof(false), next(nullptr){};
+  Node(const Node& obj):_data(obj._data), blockstart(obj.blockstart), blockend(obj.blockend), eof(obj.eof), next(obj.next){};
+  Node& operator=(const Node& p){
+    Node x(p);
+    return *this;};
+};
+
+
 //! \brief A class that assembles a series of excerpts from a byte stream (possibly out of order,
 //! possibly overlapping) into an in-order byte stream.
 class StreamReassembler {
@@ -14,12 +29,19 @@ class StreamReassembler {
 
     ByteStream _output;  //!< The reassembled in-order byte stream
     size_t _capacity;    //!< The maximum number of bytes
+    size_t _remaincapacity; // remainning capacity in link list
+    Node* _head;         // 乱序数据链成有序链表的表头
 
   public:
     //! \brief Construct a `StreamReassembler` that will store up to `capacity` bytes.
     //! \note This capacity limits both the bytes that have been reassembled,
     //! and those that have not yet been reassembled.
     StreamReassembler(const size_t capacity);
+    StreamReassembler(const StreamReassembler& p):_output(p._output), _capacity(p._capacity), _remaincapacity(p._remaincapacity), _head(p._head){};
+    StreamReassembler& operator=(const StreamReassembler& p){
+      StreamReassembler obj(p);
+      return *this;
+    }
 
     //! \brief Receive a substring and write any newly contiguous bytes into the stream.
     //!
@@ -46,6 +68,9 @@ class StreamReassembler {
     //! \brief Is the internal state empty (other than the output stream)?
     //! \returns `true` if no substrings are waiting to be assembled
     bool empty() const;
+
+    void insert_to_linklist(string data, size_t index, Node* head, bool eof);
+    void fetch_valid_data();
 };
 
 #endif  // SPONGE_LIBSPONGE_STREAM_REASSEMBLER_HH
