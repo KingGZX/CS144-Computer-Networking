@@ -8,6 +8,8 @@ void Buffer::remove_prefix(const size_t n) {
     }
     _starting_offset += n;
     if (_storage and _starting_offset == _storage->size()) {
+        // 减少一次引用计数
+        // 当所有在读此stirng的buffer都读完了，那个string才会被释放掉
         _storage.reset();
     }
 }
@@ -33,7 +35,7 @@ BufferList::operator Buffer() const {
 
 string BufferList::concatenate() const {
     std::string ret;
-    ret.reserve(size());
+    ret.reserve(size());        // 这个是reserve.... 就是开辟一块空间。。。  我看成reverse了
     for (const auto &buf : _buffers) {
         ret.append(buf);
     }
@@ -53,7 +55,7 @@ void BufferList::remove_prefix(size_t n) {
         if (_buffers.empty()) {
             throw std::out_of_range("BufferList::remove_prefix");
         }
-
+        // 其实可以直接 _buffers.front().size() ?? 
         if (n < _buffers.front().str().size()) {
             _buffers.front().remove_prefix(n);
             n = 0;

@@ -19,6 +19,7 @@ FileDescriptor::FDWrapper::FDWrapper(const int fd) : _fd(fd) {
 }
 
 void FileDescriptor::FDWrapper::close() {
+    // 系统调用 close 关闭此文件描述符
     SystemCall("close", ::close(_fd));
     _eof = _closed = true;
 }
@@ -36,9 +37,12 @@ FileDescriptor::FDWrapper::~FDWrapper() {
 }
 
 //! \param[in] fd is the file descriptor number returned by [open(2)](\ref man2::open) or similar
+
+// make_shared 制作一个指向FDWrapprt的智能指针
 FileDescriptor::FileDescriptor(const int fd) : _internal_fd(make_shared<FDWrapper>(fd)) {}
 
 //! Private constructor used by duplicate()
+// after using moving, other_shared_ptr will be set to nullptr & internal_fd directly occupy its address
 FileDescriptor::FileDescriptor(shared_ptr<FDWrapper> other_shared_ptr) : _internal_fd(move(other_shared_ptr)) {}
 
 //! \returns a copy of this FileDescriptor
@@ -51,8 +55,10 @@ void FileDescriptor::read(std::string &str, const size_t limit) {
     const size_t size_to_read = min(BUFFER_SIZE, limit);
     str.resize(size_to_read);
 
+    // 把大小为size_to_read的内容，从filedescriptor fd_num()中读取到首地址为str.data()的连续内存中来
     ssize_t bytes_read = SystemCall("read", ::read(fd_num(), str.data(), size_to_read));
     if (limit > 0 && bytes_read == 0) {
+        // bytes_read = 0代表读完了 没东西可读了
         _internal_fd->_eof = true;
     }
     if (bytes_read > static_cast<ssize_t>(size_to_read)) {

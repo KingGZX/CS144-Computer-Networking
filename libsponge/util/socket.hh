@@ -12,6 +12,10 @@
 //! \brief Base class for network sockets (TCP, UDP, etc.)
 //! \details Socket is generally used via a subclass. See TCPSocket and UDPSocket for usage examples.
 class Socket : public FileDescriptor {
+  /*
+  总体来说，Socket就是一个普适意义上的文件描述符。
+  
+  */
   private:
     //! Get the local or peer address the socket is connected to
     Address get_address(const std::string &name_of_function,

@@ -10,7 +10,7 @@
 
 //! A reference-counted handle to a file descriptor
 class FileDescriptor {
-    //! \brief A handle on a kernel file descriptor.
+    //! \brief A handle on a kernel file descriptor.  内核文件描述符
     //! \details FileDescriptor objects contain a std::shared_ptr to a FDWrapper.
     class FDWrapper {
       public:
@@ -33,12 +33,24 @@ class FileDescriptor {
         //!@{
         FDWrapper(const FDWrapper &other) = delete;
         FDWrapper &operator=(const FDWrapper &other) = delete;
+
+        /*
+        用 && 来表示右值引用。
+        所谓右值，通常用以表示临时对象。很典型的临时对象就是立即数，如：
+        int a = 0 ， 0就是那个右值
+
+        用move函数将对象强制转换为右值后，进行构造可以调用 移动构造函数。
+        这样会使得新对象和原对象共用同一内存空间，省去了拷贝构造的麻烦事。
+
+        reference:
+        https://stackoverflow.com/questions/3106110/what-is-move-semantics
+        */
         FDWrapper(FDWrapper &&other) = delete;
         FDWrapper &operator=(FDWrapper &&other) = delete;
         //!@}
     };
 
-    //! A reference-counted handle to a shared FDWrapper
+    //! A reference-counted handle to a shared FDWrapper   可以多个process同时打开一个fd，所以用计数制的shared_ptr
     std::shared_ptr<FDWrapper> _internal_fd;
 
     // private constructor used to duplicate the FileDescriptor (increase the reference count)

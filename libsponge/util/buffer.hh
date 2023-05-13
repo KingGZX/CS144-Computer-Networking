@@ -29,8 +29,15 @@ class Buffer {
         if (not _storage) {
             return {};
         }
+        // 和substr很像 第一个参数是buffer的起始地址，第二个参数是有效长度
         return {_storage->data() + _starting_offset, _storage->size() - _starting_offset};
     }
+
+    /*
+    转换为string_view对象的好处:
+
+    可以见自己的CPP_traits相关代码
+    */
 
     operator std::string_view() const { return str(); }
     //!@}
@@ -54,6 +61,9 @@ class Buffer {
 //! + a payload. This allows us to prepend headers (e.g., to
 //! encapsulate a TCP payload in a TCPSegment, and then encapsulate
 //! the TCPSegment in an IPv4Datagram) without copying the payload.
+
+// 好像就是可以用于向下封装packet 从传输层-》网络层-》链路层
+// 比如第一个buffer是TCP段, 我们只需要往deque再相继添加IP头 + 链路层头 就可以形成一个完整可以发送的数据包了
 class BufferList {
   private:
     std::deque<Buffer> _buffers{};
@@ -112,9 +122,10 @@ class BufferViewList {
     BufferViewList(const BufferList &buffers);
 
     //! \brief Construct from a std::string_view
+    // 目前还不知为何不直接 _views.push_back(str);
     BufferViewList(std::string_view str) { _views.push_back({const_cast<char *>(str.data()), str.size()}); }
     //!@}
-
+    
     //! \brief Discard the first `n` bytes of the string (does not require a copy or move)
     void remove_prefix(size_t n);
 
