@@ -51,7 +51,7 @@ class Address {
     std::string ip() const { return ip_port().first; }
     //! Numeric port (host byte order).
     uint16_t port() const { return ip_port().second; }
-    //! Numeric IP address as an integer (i.e., in [host byte order](\ref man3::byteorder)).
+    //! Numeric IP address as an integer (i.e., in [host byte order](\ref man3::byteorder)).    32bit数
     uint32_t ipv4_numeric() const;
     //! Create an Address from a 32-bit raw numeric IP address
     static Address from_ipv4_numeric(const uint32_t ip_address);

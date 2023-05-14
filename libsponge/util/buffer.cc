@@ -100,6 +100,9 @@ vector<iovec> BufferViewList::as_iovecs() const {
     vector<iovec> ret;
     ret.reserve(_views.size());
     for (const auto &x : _views) {
+        // 注意查看iovec结构体的structrue:
+        // 由void* iov_base & size_t iov_len 构成
+        // 第一个指针代表是可进行I/O操作的地址
         ret.push_back({const_cast<char *>(x.data()), x.size()});
     }
     return ret;

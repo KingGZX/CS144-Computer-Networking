@@ -83,8 +83,11 @@ size_t FileDescriptor::write(BufferViewList buffer, const bool write_all) {
     size_t total_bytes_written = 0;
 
     do {
-        auto iovecs = buffer.as_iovecs();
-
+        auto iovecs = buffer.as_iovecs();           
+        /*
+        看看writev 是咋用的，blog里手动设置了iovec数组，并输出到STDOUT_FILENO,即控制台里
+        reference: https://blog.csdn.net/u010429831/article/details/122452030
+        */
         const ssize_t bytes_written = SystemCall("writev", ::writev(fd_num(), iovecs.data(), iovecs.size()));
         if (bytes_written == 0 and buffer.size() != 0) {
             throw runtime_error("write returned 0 given non-empty input buffer");
@@ -99,7 +102,7 @@ size_t FileDescriptor::write(BufferViewList buffer, const bool write_all) {
         buffer.remove_prefix(bytes_written);
 
         total_bytes_written += bytes_written;
-    } while (write_all and buffer.size());
+    } while (write_all and buffer.size());      // 只要没写完并且要求写完则 一直写
 
     return total_bytes_written;
 }

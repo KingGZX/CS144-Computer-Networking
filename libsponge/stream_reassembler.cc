@@ -12,30 +12,43 @@ void DUMMY_CODE(Targs &&... /* unused */) {}
 
 using namespace std;
 
+// 创建一个内置ByteStream
 StreamReassembler::StreamReassembler(const size_t capacity) : _output(capacity), _capacity(capacity), _remaincapacity(capacity), _head(nullptr) {}
 
 //! \details This function accepts a substring (aka a segment) of bytes,
 //! possibly out-of-order, from the logical stream, and assembles any newly
 //! contiguous substrings and writes them into the output stream in order.
+//! \param data the substring
+//! \param index indicates the index (place in sequence) of the first byte in `data`
+//! \param eof the last byte of `data` will be the last byte in the entire stream
 void StreamReassembler::push_substring(const string &data, const size_t index, const bool eof) {
     string _data(data);         // 改为string更方便操作
     //先看到来的数据是否可以插入，即对比index和writtensize的关系
+    // bytes_written是已写入本地ByteStream的字节数，如果来的这个index刚好是 writtensize值 那么恰好可以放进去的 注意序号从0开始
+    // 如果这个writtensize值大于index，那么要把多余的这部分裁剪掉
+    // 如果这个writtensize值小于index，那么说明中间漏了一些字节数据
     if(index <= _output.bytes_written()){
         // 看看是否来的数据有要裁减的地方
         size_t offset = 0;
+        // 根据上述判断，我们要裁剪掉一点多余的部分
+        // 由于我们希望下一个来到的字节就是序号为writtensize的数据
+        // 所以我们提前判断当前来的字节流是不是完全重复，即从index开始加上本字节流的长度完全小于writtensize的话，说明当前字节流早已进入过ByteStream中
+        // 否的的话我们就进行裁剪，把overlap的数据裁剪掉
         if(index + data.length() >= _output.bytes_written()){
             offset = _output.bytes_written() - index;
             _data = _data.substr(offset);
         }
         else return;        // ignore the sequence, because all the data has been in output
-        // for the comming data , judge the real size it can write in
+
+        // for the comming data , judge the real size it can write in 就是看看ByteStream能不能写下那么多呢
         size_t _writesize = min(_data.length(), _output.remaining_capacity());
-        //_data = _data.substr(0, _writesize);
+        // 能写的情况下才写入
         if(_writesize >= _data.length()){
             _output.write(_data);
             if(eof)
                 _output.end_input();
         }
+        // 否则的话，把能写的部分先写入ByteStream，其余的放入到链表中
         else{
             // we can just write a portion of data into output, the rest should be kept in link list
             string _writedata = _data.substr(0, _writesize);
@@ -45,9 +58,11 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
         }
     }
     else{
+        // 这就是基于判断中的第三个情况，此时的数据完美全没有能写入的部分，全部放进链表中
         // 把序号过大的数据写入到链表中
         insert_to_linklist(_data, index, _head, eof);
     }
+    // 一旦有空间且链表有数据就去看看有没有能放的
     fetch_valid_data();
 }
 

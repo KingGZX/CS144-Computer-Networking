@@ -6,6 +6,11 @@
 #include <stdexcept>
 #include <unistd.h>
 
+/*
+绝大部分时候都在调用 system call
+socket就是对传输层网络层的一个抽象
+*/
+
 using namespace std;
 
 // default constructor for socket of (subclassed) domain and type
@@ -23,6 +28,7 @@ Socket::Socket(FileDescriptor &&fd, const int domain, const int type) : FileDesc
 
     // verify domain
     len = sizeof(actual_value);
+    // 就是把当前文件描述符的socket option全部取出 与 当前想要创建的设置进行对比
     SystemCall("getsockopt", getsockopt(fd_num(), SOL_SOCKET, SO_DOMAIN, &actual_value, &len));
     if ((len != sizeof(actual_value)) or (actual_value != domain)) {
         throw runtime_error("socket domain mismatch");
@@ -44,7 +50,8 @@ Address Socket::get_address(const string &name_of_function,
                             const function<int(int, sockaddr *, socklen_t *)> &function) const {
     Address::Raw address;
     socklen_t size = sizeof(address);
-
+    
+    // 此处的function是一个函数指针
     SystemCall(name_of_function, function(fd_num(), address, &size));
 
     return {address, size};
@@ -143,6 +150,8 @@ void UDPSocket::send(const BufferViewList &payload) {
 
 // mark the socket as listening for incoming connections
 //! \param[in] backlog is the number of waiting connections to queue (see [listen(2)](\ref man2::listen))
+
+// 有个最大监听数量
 void TCPSocket::listen(const int backlog) { SystemCall("listen", ::listen(fd_num(), backlog)); }
 
 // accept a new incoming connection

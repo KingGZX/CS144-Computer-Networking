@@ -14,7 +14,6 @@
 class Socket : public FileDescriptor {
   /*
   总体来说，Socket就是一个普适意义上的文件描述符。
-  
   */
   private:
     //! Get the local or peer address the socket is connected to
@@ -56,10 +55,14 @@ class UDPSocket : public Socket {
   protected:
     //! \brief Construct from FileDescriptor (used by TCPOverUDPSocketAdapter)
     //! \param[in] fd is the FileDescriptor from which to construct
+
+    // AF_INET: IPv4  datagram 是udp用的数据包   SOCK_STREME 是TCP
     explicit UDPSocket(FileDescriptor &&fd) : Socket(std::move(fd), AF_INET, SOCK_DGRAM) {}
 
   public:
     //! Default: construct an unbound, unconnected UDP socket
+
+    // 和显示创建的区别就在于 "unbound, unconnected"
     UDPSocket() : Socket(AF_INET, SOCK_DGRAM) {}
 
     //! Returned by UDPSocket::recv; carries received data and information about the sender
@@ -69,12 +72,20 @@ class UDPSocket : public Socket {
     };
 
     //! Receive a datagram and the Address of its sender
-    received_datagram recv(const size_t mtu = 65536);
+    received_datagram recv(const size_t mtu = 65536);   // 64 Bytes
 
     //! Receive a datagram and the Address of its sender (caller can allocate storage)
     void recv(received_datagram &datagram, const size_t mtu = 65536);
 
     //! Send a datagram to specified Address
+
+    /*
+    注意这里用了BufferViewList
+    这是一个包含了 deque<string_view> 的类
+
+    用string_view首先可以避免一些没必要的copy delete操作
+    因此可以避开对原数据的修改
+    */
     void sendto(const Address &destination, const BufferViewList &payload);
 
     //! Send datagram to the socket's connected address (must call connect() first)

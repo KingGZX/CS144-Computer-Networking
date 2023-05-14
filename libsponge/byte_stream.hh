@@ -18,12 +18,12 @@ class ByteStream {
     // all, but if any of your tests are taking longer than a second,
     // that's a sign that you probably want to keep exploring
     // different approaches.
-    deque<char> _que;
-    size_t _capacity;     // 表示当前ByteStream的剩余容量
-    size_t _maximumcapacity;  // 始终不变的最大容量
+    deque<char> _que;         // 由于需要两个端口，一个用于写，一个用于读，所以自然联想到双端队列
+    size_t _capacity;         // 表示当前ByteStream的剩余容量
+    const size_t _maximumcapacity;  // 始终不变的最大容量
     size_t _writtensize;      // 表示已写入的字节数
     size_t _readsize;         // 表示已读的字节数
-    bool _error{};  //!< Flag indicating that the stream suffered an error.
+    bool _error{};    //!< Flag indicating that the stream suffered an error.
     bool _end{};      // 标志是否写完毕
 
   public:

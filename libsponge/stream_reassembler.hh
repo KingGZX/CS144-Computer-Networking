@@ -7,6 +7,9 @@
 #include <string>
 
 //利用操作系统里回收内存碎片的知识，建立一条乱序数据的链表
+/*
+链表的某个节点就是一块data，并且标记了
+*/
 struct Node{
   string _data;
   size_t blockstart;
@@ -17,7 +20,8 @@ struct Node{
   Node(const Node& obj):_data(obj._data), blockstart(obj.blockstart), blockend(obj.blockend), eof(obj.eof), next(obj.next){};
   Node& operator=(const Node& p){
     Node x(p);
-    return *this;};
+    return *this;
+  };
 };
 
 
@@ -27,10 +31,10 @@ class StreamReassembler {
   private:
     // Your code here -- add private members as necessary.
 
-    ByteStream _output;  //!< The reassembled in-order byte stream
-    size_t _capacity;    //!< The maximum number of bytes
+    ByteStream _output;     //!< The reassembled in-order byte stream
+    size_t _capacity;       //!< The maximum number of bytes
     size_t _remaincapacity; // remainning capacity in link list
-    Node* _head;         // 乱序数据链成有序链表的表头
+    Node* _head;            // 乱序数据链成有序链表的表头
 
   public:
     //! \brief Construct a `StreamReassembler` that will store up to `capacity` bytes.
