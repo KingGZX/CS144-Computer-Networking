@@ -58,7 +58,7 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
         }
     }
     else{
-        // 这就是基于判断中的第三个情况，此时的数据完美全没有能写入的部分，全部放进链表中
+        // 这就是基于判断中的第三个情况，此时的数据完全没有能写入的部分，全部放进链表中
         // 把序号过大的数据写入到链表中
         insert_to_linklist(_data, index, _head, eof);
     }
@@ -71,20 +71,35 @@ size_t StreamReassembler::unassembled_bytes() const { return _capacity - _remain
 bool StreamReassembler::empty() const { return _remaincapacity == _capacity; }
 
 void StreamReassembler::insert_to_linklist(string data, size_t index, Node* head, bool eof){
+    // 数据为空 或者 这个Reassembler管道没内存 存数据了 则无操作
     if(data.length() == 0 ||  _remaincapacity == 0) return ;
+    // 判断能写入缓存(Not ByteStream)的数量
     size_t _writesize = min(data.length(), _remaincapacity);
     if(_head == nullptr){
+        /*
+        创建头节点，按需写入相应信息
+        其中用 blockstart 代表当前写入数据的 index
+        用 blockend 代表当前写入数据的末尾 index
+        */
         string _writedata = data.substr(0, _writesize);
         _head = new Node(_writedata);
         _head->blockstart = index;
         _head->blockend = index + _writesize - 1;
         _remaincapacity -= _writesize;
+        // 即使这个数据块有eof, 也得判断这个数据块是不是全部被写入了
         if(_writesize == data.length() && eof)
             _head->eof = eof;
         return;
     }
     else{
         // there is a possibility that we should create a new head node;
+        /*
+        我们认为_head代表的blockstart是最小的未进入ByteStream的数据index
+        e.g. 我们得知ByteStream的writtensize为 23，即我们希望下一个来到的数据的index为23.（因为index从0开始）
+
+        结果先来了一个数据包，index = 33.。。。。。我们作为头节点插入了
+        现在又来了一个数据包，index = 28，那么我们就要将这个数据包作为新的头节点。
+        */
         if(index < _head->blockstart){
             _writesize = min(_writesize, _head->blockstart - index);
             string _writedata = data.substr(0, _writesize);
@@ -94,6 +109,13 @@ void StreamReassembler::insert_to_linklist(string data, size_t index, Node* head
             temp->next = _head;
             _head = temp;
             _remaincapacity -= _writesize;
+            /*
+            还是刚刚那个情况。
+            假如我们的链表头的节点的block的index 是 [33, 36]
+            现在进来一个数据块 [28, 44]
+            那么根据上面的代码，我们先把 [28, 32]作为新的头节点
+            然后呢，我们把剩下的数据块 [33, 44]作为新的数据块递归地插入链表，由后面else处的代码执行插入操作。
+            */
             string _data = data.substr(_writesize); 
             insert_to_linklist(_data, index + _writesize, _head->next, eof);
         }

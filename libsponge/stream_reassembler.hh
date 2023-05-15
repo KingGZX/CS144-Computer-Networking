@@ -12,6 +12,8 @@
 */
 struct Node{
   string _data;
+  //         其中用 blockstart 代表当前写入数据的 index
+  //         用 blockend 代表当前写入数据的末尾 index
   size_t blockstart;
   size_t blockend;
   bool eof;
