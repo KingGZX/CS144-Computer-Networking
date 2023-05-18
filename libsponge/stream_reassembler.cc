@@ -70,7 +70,32 @@ size_t StreamReassembler::unassembled_bytes() const { return _capacity - _remain
 
 bool StreamReassembler::empty() const { return _remaincapacity == _capacity; }
 
-void StreamReassembler::insert_to_linklist(string data, size_t index, Node* head, bool eof){
+/*
+-----------------------------Modified-----------------------------
+
+replace Node* with Node* &
+只能说之前的测试数据对我比较友好，但实际上应该用指针引用才对！！
+
+为什么？ 注意看我们call递归的时候基本上是， 
+
+insert_to_linklist(xx, xx, temp->next, xx)
+
+因为我们再递归插入的时候，也许会创建一个新Node，那么此时
+我们需要修改的实际上是 temp->next 的指向，
+也就是需要修改地址本身而不仅仅是 temp->next 内存块的值！
+
+只能说之前的测试数据除了第一次建表头(_head是成员变量)，之后都没有用递归真真实实地插入过新节点，都是在递归前就已经插入完毕了
+*/
+void StreamReassembler::insert_to_linklist(string data, size_t index, Node* &head, bool eof){
+    /*
+    condition1:
+           xxxxx
+        xxxxxxxxxx
+    
+    condition2:
+          xxxxx
+           xxxxxxxx
+    */
     // 数据为空 或者 这个Reassembler管道没内存 存数据了 则无操作
     if(data.length() == 0 ||  _remaincapacity == 0) return ;
     // 判断能写入缓存(Not ByteStream)的数量
@@ -114,28 +139,57 @@ void StreamReassembler::insert_to_linklist(string data, size_t index, Node* head
             假如我们的链表头的节点的block的index 是 [33, 36]
             现在进来一个数据块 [28, 44]
             那么根据上面的代码，我们先把 [28, 32]作为新的头节点
-            然后呢，我们把剩下的数据块 [33, 44]作为新的数据块递归地插入链表，由后面else处的代码执行插入操作。
+            然后呢，我们把剩下的数据块 [33, 44]作为新的数据块递归地插入链表，(注意此刻我们的头节点是用  [33， 36])由后面else处的代码执行插入操作。
             */
             string _data = data.substr(_writesize); 
             insert_to_linklist(_data, index + _writesize, _head->next, eof);
         }
         else{
+            // 进入这个控制块说明当前数据 的start_index 比 head的start 要大
             Node* p = head;
+            /*
+            这个while可以画个图模拟一下体会一下，我自己写代码的时候也想了好久这样合不合适
+            并且也是 check_lab 出错之后根据一些测试数据发现的
+            */
             while(p){
-                if(index + _writesize - 1 > p->blockend){
+                // 看看当前数据块
+                if(index + _writesize - 1 > p->blockend){   // 要写的数据块的end 超过当前遍历的 block的end 
+            /*
+                当链表是连续的时候我们可以直接跳到下一块，否则 部分要写入数据 可能刚好 卡在 这块block的end 和 下一块block的start之间
+
+                因此如果index 直接比下一块的start还要大的话，也是可以直接跳的
+            */
                     if(p->next && (p->next->blockstart == p->blockend + 1 || index > p->next->blockstart))
                         p = p->next;
                     else
                         break;
                 }
+                // 说明要写的数据块实际上已经存在于链表中
                 else return;
             }
+            // 跳出循环两种可能： 1. 链表到尾了      2. 链表两块之间前一块的end和后一块的start不连续且 数据的index小于后一块的start
+            // 此时得看一看，要写的数据的index 和 当前跳出来的链表的node 的end 的关系！
             size_t offset;
             if(index > p->blockend) offset = 0;
-            else offset = p->blockend + 1 - index;
+            else offset = p->blockend + 1 - index;  // 说明 数据 和 跳出来的node有部分重合的情况
             if(p->next){
+                /*
+                Situation:
+                xxx    xxxx
+                 xxxxxxxxxxxx
+                其实就是把中间这一块补上
+                */
                 string _writedata = data.substr(offset);
-                _writesize = min(min(_writesize, _writedata.length()), p->next->blockstart - p->blockend - 1);
+                /*
+                ------------------------------Modified----------------------
+                一开始直接是  p->next->blockstart - p->blockend - 1
+                但需要考虑情况
+                xxxx    xxxxx
+                      xxxxxxxxx
+                此时实际需要写入的长度就是 p->next->blockstart - index
+                只能说测试数据比较友好，没帮我查出来？？？
+                */
+                _writesize = min(min(_writesize, _writedata.length()), p->next->blockstart - max(index - 1, p->blockend) - 1);
                 _writedata = data.substr(offset, _writesize);
                 Node* temp = new Node(_writedata);
                 temp->blockstart = index + offset;
@@ -147,6 +201,7 @@ void StreamReassembler::insert_to_linklist(string data, size_t index, Node* head
                 insert_to_linklist(_data, temp->blockend + 1, temp->next, eof);
             }
             else{
+                // 说明要添加一个节点到链表尾部
                 string _writedata = data.substr(offset);
                 _writesize = min(_writesize, _writedata.length());
                 _writedata = _writedata.substr(0, _writesize);
@@ -178,6 +233,7 @@ void StreamReassembler::fetch_valid_data(){
                 delete p;
             }
             else{
+                // 比起insert 非常easy啦 就是 _head -> blockstart <= written_size 且  _head -> blockend >= written_size的情况
                 size_t offset = _output.bytes_written() - _head->blockstart;
                 string _data = _head->_data.substr(offset);
                 if(_data.length() > _output.remaining_capacity()){

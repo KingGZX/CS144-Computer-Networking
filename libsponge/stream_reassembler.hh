@@ -75,7 +75,7 @@ class StreamReassembler {
     //! \returns `true` if no substrings are waiting to be assembled
     bool empty() const;
 
-    void insert_to_linklist(string data, size_t index, Node* head, bool eof);
+    void insert_to_linklist(string data, size_t index, Node* &head, bool eof);
     void fetch_valid_data();
 };
 
