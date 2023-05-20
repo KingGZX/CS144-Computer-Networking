@@ -43,7 +43,7 @@ class StreamReassembler {
     //! \note This capacity limits both the bytes that have been reassembled,
     //! and those that have not yet been reassembled.
     StreamReassembler(const size_t capacity);
-    StreamReassembler(const StreamReassembler& p):_output(p._output), _capacity(p._capacity), _remaincapacity(p._remaincapacity), _head(p._head){};
+    StreamReassembler(const StreamReassembler& p):_output(p._output), _capacity(p._capacity), _remaincapacity(p._remaincapacity), _head(p._head) {};
     StreamReassembler& operator=(const StreamReassembler& p){
       StreamReassembler obj(p);
       return *this;
