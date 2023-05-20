@@ -7,6 +7,7 @@
 //! \brief [TCP](\ref rfc::rfc793) segment header
 //! \note TCP options are not supported
 struct TCPHeader {
+    // 其实就是前五行
     static constexpr size_t LENGTH = 20;  //!< [TCP](\ref rfc::rfc793) header length, not including options
 
     //! \struct TCPHeader

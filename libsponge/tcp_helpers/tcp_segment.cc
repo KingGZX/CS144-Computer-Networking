@@ -23,6 +23,11 @@ ParseResult TCPSegment::parse(const Buffer buffer, const uint32_t datagram_layer
 }
 
 size_t TCPSegment::length_in_sequence_space() const {
+    /*
+    报文段中为了标记开头和结尾
+    SYN 和 FIN 均占用一个Byte
+    所以除了发送数据长度还需要查看这两个标志位
+    */
     return payload().str().size() + (header().syn ? 1 : 0) + (header().fin ? 1 : 0);
 }
 
