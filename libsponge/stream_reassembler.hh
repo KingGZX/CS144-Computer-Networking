@@ -69,6 +69,7 @@ class StreamReassembler {
     //!
     //! \note If the byte at a particular index has been pushed more than once, it
     //! should only be counted once for the purpose of this function.
+    // 在我的实现中 其实就是在链表里的所有数据的大小
     size_t unassembled_bytes() const;
 
     //! \brief Is the internal state empty (other than the output stream)?
