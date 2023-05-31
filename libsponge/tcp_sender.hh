@@ -32,6 +32,20 @@ class TCPSender {
     //! the (absolute) sequence number for the next byte to be sent
     uint64_t _next_seqno{0};
 
+    // if this is the first time we send to peer endpoint, SYN is needed.
+    // window size is also need to be kept
+    uint16_t _win_size{0};
+    WrappingInt32 _ack{0};
+
+    // for bytes in flight calculating
+    uint64_t _flight_bytes{0};
+
+    // for close connection
+    bool _set_fin{false};
+
+    // for retransmitting
+    std::queue<TCPSegment> _wait_ack{};
+
   public:
     //! Initialize a TCPSender
     TCPSender(const size_t capacity = TCPConfig::DEFAULT_CAPACITY,
