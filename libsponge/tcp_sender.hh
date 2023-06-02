@@ -46,6 +46,50 @@ class TCPSender {
     // for retransmitting
     std::queue<TCPSegment> _wait_ack{};
 
+    // A retransmission timer
+    // 一个重要功能就是 指数退避 防止网络拥塞
+    class Timer {
+        private:
+          bool active{false};
+          bool expired{false};
+          unsigned int _init_timeout;       // 初始的不动的RTO，和Sender类中的 _initial_retransmission_timeout 一个意思
+          unsigned int _timeout;            // 指数退避的 RTO， 会 double 的
+          unsigned int _cur_time{0};        // 每次 Sender 一个 时钟嘀嗒 都会积攒一定时间
+
+        public:
+          Timer(const uint16_t retx_timeout):_init_timeout(retx_timeout), _timeout(retx_timeout){};
+          void start(){expired = false, active = true;};
+          // if expired, return true and restransmit segments
+          void tictoc(uint16_t win_size, unsigned int _tictoc_time, unsigned int& _consecutive_num) {
+            if(active){
+              _cur_time += _tictoc_time;
+              if(_cur_time >= _init_timeout) {
+                expire(win_size, _consecutive_num);
+                _cur_time = 0;
+                expired = true;
+              }
+            }
+          }
+          void expire(uint16_t win_size, unsigned int& _consecutive_num) {
+            active = false;
+            if(win_size) {               // note that we do this only if advertised window size is greater than 0
+              _consecutive_num += 1;
+              _timeout *= 2;
+            }
+          };
+          void reset(){
+            _cur_time = 0;
+            _timeout = _init_timeout;
+          };
+          void stop(){active = false;};
+          bool isexpired(){return expired;};
+    };
+  Timer _timer;
+
+  // to test whether the connection is hopeless
+  unsigned int _consecutive_transmit_num{0};
+
+
   public:
     //! Initialize a TCPSender
     TCPSender(const size_t capacity = TCPConfig::DEFAULT_CAPACITY,
