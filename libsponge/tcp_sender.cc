@@ -4,6 +4,8 @@
 
 #include <random>
 
+#include <iostream>
+
 // Dummy implementation of a TCP sender
 
 // For Lab 3, please replace with a real implementation that passes the
@@ -20,7 +22,8 @@ using namespace std;
 TCPSender::TCPSender(const size_t capacity, const uint16_t retx_timeout, const std::optional<WrappingInt32> fixed_isn)
     : _isn(fixed_isn.value_or(WrappingInt32{random_device()()}))
     , _initial_retransmission_timeout{retx_timeout}
-    , _stream(capacity) {}
+    , _stream(capacity)
+    , _timer(retx_timeout) {}
 
 uint64_t TCPSender::bytes_in_flight() const { 
     return _flight_bytes;
@@ -43,23 +46,23 @@ void TCPSender::fill_window() {
         head.seqno = next_seqno();
         if(_next_seqno == 0){
             head.syn = true;
-            seg.header() = head;
         }
+        // ===== 一开始把这一步操作放在 上面那个if 里面了 导致 第一个test一直不过 ====== //
+        seg.header() = head;
         size_t seqlen = seg.length_in_sequence_space();
          // 即使对端无空间，那么也发送一个Byte出去，这样才能保持通信；否则即使对端有空出来的位置了可能也就失联了
         size_t _m_win_sz = _win_size == 0 ? 1 : _win_size;      // means ----"modified window size"---- // 
         if(seqlen < _m_win_sz){                                 // window 还能支撑剩余空间的情况下 再附加payload
-            size_t write_sz = min(_m_win_sz, TCPConfig::MAX_PAYLOAD_SIZE);                          // 不能超过最大限制
-            write_sz = min(write_sz, _stream.bytes_written() - _stream.bytes_read());               // 不能超过管道可读数量
+            size_t write_sz = min(_m_win_sz - seqlen, TCPConfig::MAX_PAYLOAD_SIZE);                          // 不能超过最大限制
+            write_sz = min(write_sz, _stream.buffer_size());               // 不能超过管道可读数量
             Buffer payload(_stream.read(write_sz));
             seqlen += write_sz;
             seg.payload() = payload;
         }
         // 如果管道读完了那么需要设置FIN
-        if(_stream.input_ended() && _stream.bytes_read() == _stream.bytes_written()){
+        if(_stream.eof()){
             if(seqlen < _m_win_sz) {     // 得放得下才行呢 (即在对方窗口限制内)
                 seg.header().fin = true;
-                _next_seqno += 1;
                 seqlen += 1;
                 _set_fin = true;
             }
@@ -71,8 +74,15 @@ void TCPSender::fill_window() {
             _flight_bytes += seqlen;
             _segments_out.push(seg);
             _wait_ack.push(seg);
+            // modify window size
+            _win_size = (_win_size > seqlen) ? (_win_size - seqlen) : 0 ;
+            // start timer
+            _timer.start();
+            if(!_win_size) return;
         }
-        else return;
+        else return;        
+        // 这个就说明管道里没有数据可读了，此时也是直接退出即可。否则就会造成一种超时现象：
+        // 还有剩余的 window_size 空间可填， 但管道已经没数据了，while 成死循环等待管道数据了
     }
 }
 
@@ -81,18 +91,67 @@ void TCPSender::fill_window() {
 void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) { 
     // DUMMY_CODE(ackno, window_size); 
     _ack = ackno;
-    _win_size = window_size;
+    _win_size = window_size == 0 ? 1 : window_size;
     // pop the segemnt waited to be acknowledged
+    // ===== 不能直接用 WrappingInt32 比较大小, 最好是转换回 absolute sequence number 比较大小 ====== //
+    bool _newdata_acked = false;
+    // Byte in flight 是已发送且未被确认的数量
+    // 那么用当前的 next_abs_seqno - flight_bytes 就是已发送且已被确认的数量     数量对应index要减去1
+    // 已被确认的数量就是全部已经进入对端 ByteStream 的数量, 其实可以根据此直接推断出 checkpoint
+    // 得到 checkpoint 后可以转换 当前 ackno 和 待确认的所有sqeno 为 absolute sequence number， 然后直接比较大小即可
+    uint64_t checkpoint = next_seqno_absolute() - bytes_in_flight() - 1;
+    uint64_t abs_ack_no = unwrap(ackno, _isn, checkpoint);
+    while(!_wait_ack.empty()) {
+        TCPSegment temp = _wait_ack.front();
+        uint64_t abs_seg_no = unwrap(temp.header().seqno, _isn, checkpoint);
+        // abs_ack_no 是在 absolute sequence number视图中我们需要的下一个Byte
+        // abs_seg_no 是在 absolute sequence number视图中某个segemnt的头字节对应的 index
+        // 如果 abs_ack_no >= abs_seg_no + len(seg) 即可认为这个段被完全确认了
+        // 因为 abs_seg_no + len 是下一个段的头字节的 index
+        // 那么 abs_ack_no - 1 就是所有已确认的index, abs_seg_no + len - 1 就是本段的最大index
+        // 只要前者大于等于后者,那么本段即被完全确认
+        if(abs_ack_no >= abs_seg_no + temp.length_in_sequence_space()) {
+            _flight_bytes -=  temp.length_in_sequence_space();
+            checkpoint += temp.length_in_sequence_space();
+            _wait_ack.pop();
+            _newdata_acked = true;
+        }
+        else {
+            break;
+        }
+    }
+    // reset some timer properties and if we still have outstanding segments, resend it
+    if(_newdata_acked){
+        _timer.reset();
+        _consecutive_transmit_num = 0;
+        if(!_wait_ack.empty()){
+            _segments_out.push(_wait_ack.front());
+            _timer.start();
+        }
+    }
+    if(_wait_ack.empty()) {
+        _timer.stop();
+    }
+    // introduces in tutorial pdf, if advertised window size is greater than 0, try filling window again
 
+    // ====== 大无语事件，明明写着如果又有空间通知过来的话就应该 fill window 一下，想不到，不用自己写出来，系统主动帮你fill了。。。。
+    // ====== 一直 test 这个点不过 都懵逼了 老是多个 1 =========
+    // fill_window();      // 无所谓 window_size 是否为 0 了 因为会变为 1
 }
 
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
 void TCPSender::tick(const size_t ms_since_last_tick) { 
-    DUMMY_CODE(ms_since_last_tick); 
+    // DUMMY_CODE(ms_since_last_tick); 
+    _timer.tictoc(_win_size, ms_since_last_tick, _consecutive_transmit_num);
+    // if our timer expire, retransmit!
+    if(_timer.isexpired() && !_wait_ack.empty()){
+        _segments_out.push(_wait_ack.front());
+        _timer.start();
+    }
 }
 
 unsigned int TCPSender::consecutive_retransmissions() const { 
-    return {}; 
+    return _consecutive_transmit_num;
 }
 
 void TCPSender::send_empty_segment() {
