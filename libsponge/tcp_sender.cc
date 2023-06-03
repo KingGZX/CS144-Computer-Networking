@@ -4,8 +4,6 @@
 
 #include <random>
 
-#include <iostream>
-
 // Dummy implementation of a TCP sender
 
 // For Lab 3, please replace with a real implementation that passes the
@@ -51,9 +49,8 @@ void TCPSender::fill_window() {
         seg.header() = head;
         size_t seqlen = seg.length_in_sequence_space();
          // 即使对端无空间，那么也发送一个Byte出去，这样才能保持通信；否则即使对端有空出来的位置了可能也就失联了
-        size_t _m_win_sz = _win_size == 0 ? 1 : _win_size;      // means ----"modified window size"---- // 
-        if(seqlen < _m_win_sz){                                 // window 还能支撑剩余空间的情况下 再附加payload
-            size_t write_sz = min(_m_win_sz - seqlen, TCPConfig::MAX_PAYLOAD_SIZE);                          // 不能超过最大限制
+        if(seqlen < _win_size){                                 // window 还能支撑剩余空间的情况下 再附加payload
+            size_t write_sz = min(_win_size- seqlen, TCPConfig::MAX_PAYLOAD_SIZE);                          // 不能超过最大限制
             write_sz = min(write_sz, _stream.buffer_size());               // 不能超过管道可读数量
             Buffer payload(_stream.read(write_sz));
             seqlen += write_sz;
@@ -61,7 +58,7 @@ void TCPSender::fill_window() {
         }
         // 如果管道读完了那么需要设置FIN
         if(_stream.eof()){
-            if(seqlen < _m_win_sz) {     // 得放得下才行呢 (即在对方窗口限制内)
+            if(seqlen < _win_size) {     // 得放得下才行呢 (即在对方窗口限制内)
                 seg.header().fin = true;
                 seqlen += 1;
                 _set_fin = true;
@@ -91,6 +88,7 @@ void TCPSender::fill_window() {
 void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) { 
     // DUMMY_CODE(ackno, window_size); 
     _ack = ackno;
+    _window_sz = window_size;
     _win_size = window_size == 0 ? 1 : window_size;
     // pop the segemnt waited to be acknowledged
     // ===== 不能直接用 WrappingInt32 比较大小, 最好是转换回 absolute sequence number 比较大小 ====== //
@@ -101,6 +99,13 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     // 得到 checkpoint 后可以转换 当前 ackno 和 待确认的所有sqeno 为 absolute sequence number， 然后直接比较大小即可
     uint64_t checkpoint = next_seqno_absolute() - bytes_in_flight() - 1;
     uint64_t abs_ack_no = unwrap(ackno, _isn, checkpoint);
+
+    // ===== 有一个不可能的 ack 需要忽略的 test =======
+    if(abs_ack_no > next_seqno_absolute()) {
+        std::cerr << "impossible ack number" << std::endl;
+        return;
+    }
+
     while(!_wait_ack.empty()) {
         TCPSegment temp = _wait_ack.front();
         uint64_t abs_seg_no = unwrap(temp.header().seqno, _isn, checkpoint);
@@ -117,6 +122,22 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
             _newdata_acked = true;
         }
         else {
+            // 其实这就是个 部分确认的 ack，真实的TCP 可以根据部分确认来切割数据块
+            // 但lab tutorial pdf 的 Q&A 回答了我们无需做到那个程度
+            // 我们只需要丢弃这样部分确认的ack就好了。。。。
+
+            // 但由于我们 ack 后 总是会再次去 fill window，那么我们应该把 _win_size 设置为0 就不会发出去一些数据
+
+            // 同时 在 test 14   send_window 中有一个test是
+            // 发送 SYN 收到 ack 并通知 window_size = 7
+            // 写入 "1234567" 再次写入 eof
+            // 发送   "1234567"
+            // 收到了 ack 但 ack 值 仍旧是 isn + 1 (即对 SYN 的确认)  但 window = 8！！！
+            // 此时 我们发出去 一个单独的 FIN 数据包 
+            
+            // 所以我想大概是因为? 如果通知窗口大小如果 比重传队列的 第一个 segment 还要小的话就不发送任何东西 ? 
+            if(window_size <= temp.length_in_sequence_space())
+                _win_size = 0;
             break;
         }
     }
@@ -125,7 +146,9 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
         _timer.reset();
         _consecutive_transmit_num = 0;
         if(!_wait_ack.empty()){
-            _segments_out.push(_wait_ack.front());
+            // ===== 之前一直以为 收到新(ack)(数据被确认) 后, 若有仍未被确认的则应该发送出去，再启动定时器
+            // ===== 其实不然，我们不用先发出去，我们应该先启动定时器等着，等一段时间没收到 ack 等expire了再发送出去。。。。 
+            // _segments_out.push(_wait_ack.front());
             _timer.start();
         }
     }
@@ -142,7 +165,7 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
 void TCPSender::tick(const size_t ms_since_last_tick) { 
     // DUMMY_CODE(ms_since_last_tick); 
-    _timer.tictoc(_win_size, ms_since_last_tick, _consecutive_transmit_num);
+    _timer.tictoc(_window_sz, ms_since_last_tick, _consecutive_transmit_num);
     // if our timer expire, retransmit!
     if(_timer.isexpired() && !_wait_ack.empty()){
         _segments_out.push(_wait_ack.front());
