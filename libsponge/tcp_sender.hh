@@ -9,6 +9,8 @@
 #include <functional>
 #include <queue>
 
+#include <iostream>
+
 //! \brief The "sender" part of a TCP implementation.
 
 //! Accepts a ByteStream, divides it up into segments and sends the
@@ -34,7 +36,24 @@ class TCPSender {
 
     // if this is the first time we send to peer endpoint, SYN is needed.
     // window size is also need to be kept
-    uint16_t _win_size{0};
+
+    /*
+    ===== _window_sz 是 收到对端通知的 window size
+    ===== _win_size 也是，但在 fill_window 时 这个值会由于数据包的发送缩小
+    ===== Reason:
+    在过 "指数退避" test 的时候 发现有一个测试案例
+    : 发一个 SYN 没收到 ack, 此时 _win_size 实际已经是 0 了， 因为初始值为1，用掉了 SYN
+    : 过了 _initial_timeout 的时间 重发成功
+    : 过了 2 * _initial_timeout - 1 的时间, 我之前的代码仍旧重发了, 说明我的指数退避失败了
+    经过debug 是因为 在 tick 函数内，第一个参数我传入了 _win_size 那么 timer 的 expire 并不会 double RTO
+    所以我新加了 一个 _window_sz 这个值是固定的, 只有初始状态下的 1 和 每次 ack 后的更新
+
+    同时 _win_size 在收到对端为 0 的 window_size 后会自动更新为 1
+    但 _window_sz 仍旧是 0 ，这样一来在重传的时候就不会去 double time 了.
+    */
+    uint16_t _win_size{1};        // 第一份SYN发送前 默认只发送 1 Byte
+    uint16_t _window_sz{1};
+
     WrappingInt32 _ack{0};
 
     // for bytes in flight calculating
@@ -63,7 +82,8 @@ class TCPSender {
           void tictoc(uint16_t win_size, unsigned int _tictoc_time, unsigned int& _consecutive_num) {
             if(active){
               _cur_time += _tictoc_time;
-              if(_cur_time >= _init_timeout) {
+              if(_cur_time >= _timeout) {
+                active = false;
                 expire(win_size, _consecutive_num);
                 _cur_time = 0;
                 expired = true;
@@ -71,18 +91,19 @@ class TCPSender {
             }
           }
           void expire(uint16_t win_size, unsigned int& _consecutive_num) {
-            active = false;
             if(win_size) {               // note that we do this only if advertised window size is greater than 0
               _consecutive_num += 1;
               _timeout *= 2;
             }
           };
           void reset(){
+            expired = false;
             _cur_time = 0;
             _timeout = _init_timeout;
           };
           void stop(){active = false;};
           bool isexpired(){return expired;};
+          unsigned int getCurtime(){return _cur_time;}; // for debugging
     };
   Timer _timer;
 
