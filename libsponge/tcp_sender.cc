@@ -182,5 +182,8 @@ unsigned int TCPSender::consecutive_retransmissions() const {
 }
 
 void TCPSender::send_empty_segment() {
-    
+    TCPSegment seg;
+    seg.header().ack = true;
+    seg.payload() = Buffer();
+    _segments_out.push(seg);
 }
