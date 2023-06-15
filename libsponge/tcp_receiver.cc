@@ -1,5 +1,7 @@
 #include "tcp_receiver.hh"
 
+#include <iostream>
+
 // Dummy implementation of a TCP receiver
 
 // For Lab 2, please replace with a real implementation that passes the
@@ -49,7 +51,17 @@ void TCPReceiver::segment_received(const TCPSegment &seg) {
         但是！
         StreamBuffer中并不真正装载 SYN，所以实际对应的 abs_seq_no 应该减去 1 才是对应的 stream index，具体可参见 lab2 pdf 表格
         */
-        
+        // std::cout << abs_seq_no << std::endl;
+        // std::cout << stream_out().bytes_written() << std::endl;
+
+        /*
+        总之 我的 reassembler好像实现的功能太多了点。。。。会导致测试错误？？
+        */
+
+        // 不合法seqno 因为这个位置是被SYN占用的  或者 过载(来了一个远超容量的seqno)
+        if(abs_seq_no == 0 || (abs_seq_no > stream_out().bytes_written() 
+        && abs_seq_no - stream_out().bytes_written() > _capacity)) return;       
+        // std::cout << abs_seq_no - stream_out().bytes_written() << std::endl;  
         _reassembler.push_substring(seg.payload().copy(), abs_seq_no - 1, eof);
     }
 }
@@ -62,6 +74,9 @@ optional<WrappingInt32> TCPReceiver::ackno() const {
     uint64_t writtensize = _reassembler.stream_out().bytes_written() + 1;
     /*
     这个是因为好像是 收到 FIN 后我们仍希望继续保持通信？？？？
+
+    // ====== 根据 Lab4 应该是有一个 linger 的时间 ？？ ====== // 
+
     总之就是有这样的测试数据
     那么需要再加上一个 FIN 占用的字节
     */
