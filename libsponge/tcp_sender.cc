@@ -163,7 +163,11 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
 
     // ====== 大无语事件，明明写着如果又有空间通知过来的话就应该 fill window 一下，想不到，不用自己写出来，系统主动帮你fill了。。。。
     // ====== 一直 test 这个点不过 都懵逼了 老是多个 1 =========
-    // fill_window();      // 无所谓 window_size 是否为 0 了 因为会变为 1
+
+    // ====== 我又来了。。。。。 Lab4 改回来的, 收到ack后要是有数据还是得fill进来的。系统并没有帮你调用
+    // 但反正我也不知道之前 Lab3 造了什么孽这句注释掉就对了，但因为先改过了 Receiver 可能就是什么毛病吧.....
+    // 反正打开后 Lab3是对的 Lab4的某个点也对上了
+    fill_window();      // 无所谓 window_size 是否为 0 了 因为会变为 1
 }
 
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
@@ -183,7 +187,9 @@ unsigned int TCPSender::consecutive_retransmissions() const {
 
 void TCPSender::send_empty_segment() {
     TCPSegment seg;
-    seg.header().ack = true;
+    // 每个报文都要有自己的序号，第一版忘记加序号了
+    seg.header().seqno = next_seqno();
+    // seg.header().ackno = _ack;    需要的是在 TCPConnection 中由 receiver 计算出来的 ackno
     seg.payload() = Buffer();
     _segments_out.push(seg);
 }
