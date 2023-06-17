@@ -21,6 +21,11 @@ class TCPConnection {
     //! in case the remote TCPConnection doesn't know we've received its whole stream?
     bool _linger_after_streams_finish{true};
 
+    bool _active{true};
+
+    // 记录上一个报文段来的时间
+    size_t _wait_segment_time{0};
+
   public:
     //! \name "Input" interface for the writer
     //!@{
@@ -82,6 +87,14 @@ class TCPConnection {
 
     //! Construct a new connection from a configuration
     explicit TCPConnection(const TCPConfig &cfg) : _cfg{cfg} {}
+
+    void try_clean_close();
+
+    ///  模仿主流写法，就是把_sender队列里的报文段，取出来，带上_receiver的ackno和window size 并放到 Connection 里面发送
+    void send_segments(); 
+
+    /// 
+    void send_rst_seg();
 
     //! \name construction and destruction
     //! moving is allowed; copying is disallowed; default construction not possible

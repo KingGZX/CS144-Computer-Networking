@@ -1,7 +1,5 @@
 #include "tcp_receiver.hh"
 
-#include <iostream>
-
 // Dummy implementation of a TCP receiver
 
 // For Lab 2, please replace with a real implementation that passes the
@@ -60,8 +58,7 @@ void TCPReceiver::segment_received(const TCPSegment &seg) {
 
         // 不合法seqno 因为这个位置是被SYN占用的  或者 过载(来了一个远超容量的seqno)
         if(abs_seq_no == 0 || (abs_seq_no > stream_out().bytes_written() 
-        && abs_seq_no - stream_out().bytes_written() > _capacity)) return;       
-        // std::cout << abs_seq_no - stream_out().bytes_written() << std::endl;  
+        && abs_seq_no - stream_out().bytes_written() > window_size())) return;       
         _reassembler.push_substring(seg.payload().copy(), abs_seq_no - 1, eof);
     }
 }
@@ -87,6 +84,6 @@ optional<WrappingInt32> TCPReceiver::ackno() const {
 }
 
 size_t TCPReceiver::window_size() const { 
-    // 就是 已经放入ByteStream中， 但是未被读取的量
-    return stream_out().remaining_capacity(); 
+    // 根据提示就是 capacity 减去 已经在 bytestream 中的 量
+    return _capacity - stream_out().buffer_size(); 
  }

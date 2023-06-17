@@ -106,7 +106,8 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
 
     // ===== 有一个不可能的 ack 需要忽略的 test =======
     if(abs_ack_no > next_seqno_absolute()) {
-        std::cerr << "impossible ack number" << std::endl;
+        // for debugging
+        // std::cerr << "impossible ack number" << std::endl;
         return;
     }
 
@@ -190,6 +191,6 @@ void TCPSender::send_empty_segment() {
     // 每个报文都要有自己的序号，第一版忘记加序号了
     seg.header().seqno = next_seqno();
     // seg.header().ackno = _ack;    需要的是在 TCPConnection 中由 receiver 计算出来的 ackno
-    seg.payload() = Buffer();
+    // seg.payload() = Buffer();
     _segments_out.push(seg);
 }
