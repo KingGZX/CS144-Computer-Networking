@@ -6,6 +6,8 @@
 #include "tcp_sender.hh"
 #include "tcp_state.hh"
 
+// Mainly modify TCP_Sender to 100% pass Lab4
+
 //! \brief A complete endpoint of a TCP connection
 class TCPConnection {
   private:
