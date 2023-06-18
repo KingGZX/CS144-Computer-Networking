@@ -8,8 +8,6 @@
 template <typename... Targs>
 void DUMMY_CODE(Targs &&... /* unused */) {}
 
-using namespace std;
-
 /*
 -----------------IMPORTANT------------------
 
@@ -58,7 +56,8 @@ void TCPReceiver::segment_received(const TCPSegment &seg) {
 
         // 不合法seqno 因为这个位置是被SYN占用的  或者 过载(来了一个远超容量的seqno)
         if(abs_seq_no == 0 || (abs_seq_no > stream_out().bytes_written() 
-        && abs_seq_no - stream_out().bytes_written() > window_size())) return;       
+        && abs_seq_no - stream_out().bytes_written() > _capacity)) return;      
+
         _reassembler.push_substring(seg.payload().copy(), abs_seq_no - 1, eof);
     }
 }
