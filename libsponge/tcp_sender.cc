@@ -4,6 +4,7 @@
 
 #include <random>
 
+#include <iostream>
 
 // ==== God dammn it, I finish the shit ==== 
 
@@ -32,6 +33,10 @@ uint64_t TCPSender::bytes_in_flight() const {
 }
 
 void TCPSender::fill_window() {
+    if(_set_fin) return;
+    // 因为可能有重复的旧的 ack 我们需要进行判别
+    if(_ackno + (_window_sz != 0 ? _window_sz : 1) <= _next_seqno) return;
+    size_t _win_size = _ackno + (_window_sz != 0 ? _window_sz : 1) - next_seqno_absolute();
     /*
     -------------  First time: my own logic --------------
     没发送SYN就发送SYN, 否则依照 可读字节数，最大字节数和window_size决定发送的数据
@@ -42,31 +47,24 @@ void TCPSender::fill_window() {
     */
     // Sender需要管理的报文头主要内容: SYN FIN 标志符, Sequence Number(concretely, Absolute Sequence Number)，payload数据荷载
     // 先发送 SYN 根据 lab pdf 的 Q&A，在我们第一次收到对端的 ACK or win_size 前 我们仅仅假设对端的 win_size = 1， 我们单独发送一个 SYN
-    while(!_set_fin){       // 只要没关闭connection，也即管道数据仍未读完(因为只有读完我们才设置FIN) 就一直读就完事了
+    while(_win_size > 0 && !_set_fin){       // 只要没关闭connection，也即管道数据仍未读完(因为只有读完我们才设置FIN) 就一直读就完事了
         TCPSegment seg;
-        TCPHeader head;
+        TCPHeader& head = seg.header();
         head.seqno = next_seqno();
+        size_t seqlen = 0;  // 记录本报文的长度，防止超过对端的window限制
         if(_next_seqno == 0){
             head.syn = true;
+            seqlen += 1;
         }
-        // ===== 一开始把这一步操作放在 上面那个if 里面了 导致 第一个test一直不过 ====== //
-        seg.header() = head;
-        size_t seqlen = seg.length_in_sequence_space();
-         // 即使对端无空间，那么也发送一个Byte出去，这样才能保持通信；否则即使对端有空出来的位置了可能也就失联了
-        if(seqlen < _win_size){                                 // window 还能支撑剩余空间的情况下 再附加payload
-            size_t write_sz = min(_win_size- seqlen, TCPConfig::MAX_PAYLOAD_SIZE);                          // 不能超过最大限制
-            write_sz = min(write_sz, _stream.buffer_size());               // 不能超过管道可读数量
-            Buffer payload(_stream.read(write_sz));
-            seqlen += write_sz;
-            seg.payload() = payload;
-        }
+        Buffer& buffer = seg.payload();
+        buffer = stream_in().read(min(_win_size - seqlen, TCPConfig::MAX_PAYLOAD_SIZE));
+        seqlen += buffer.size();
         // 如果管道读完了那么需要设置FIN
-        if(_stream.eof()){
-            if(seqlen < _win_size) {     // 得放得下才行呢 (即在对方窗口限制内)
-                seg.header().fin = true;
-                seqlen += 1;
-                _set_fin = true;
-            }
+        if(_stream.eof() && seqlen < _win_size){
+            // 得放得下才行呢 (即在对方窗口限制内) 因为FIN也占用一个Byte
+            head.fin = true;
+            seqlen += 1;
+            _set_fin = true;
         }
         _next_seqno += seqlen;      // 虽然我们不知道发出去这个segment会不会被确认，但反正没收到+重传计时器到点了自然会重传
         // for transmitting and retransmitting
@@ -74,11 +72,12 @@ void TCPSender::fill_window() {
         if(seqlen > 0){
             _flight_bytes += seqlen;
             _segments_out.push(seg);
+            // start timer
+            if(!_timer.started())
+                _timer.start();
             _wait_ack.push(seg);
             // modify window size
-            _win_size = (_win_size > seqlen) ? (_win_size - seqlen) : 0 ;
-            // start timer
-            _timer.start();
+            _win_size -= seqlen;
             if(!_win_size) return;
         }
         else return;        
@@ -91,9 +90,6 @@ void TCPSender::fill_window() {
 //! \param window_size The remote receiver's advertised window size
 void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) { 
     // DUMMY_CODE(ackno, window_size); 
-    _ack = ackno;
-    _window_sz = window_size;
-    _win_size = window_size == 0 ? 1 : window_size;
     // pop the segemnt waited to be acknowledged
     // ===== 不能直接用 WrappingInt32 比较大小, 最好是转换回 absolute sequence number 比较大小 ====== //
     bool _newdata_acked = false;
@@ -101,8 +97,10 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     // 那么用当前的 next_abs_seqno - flight_bytes 就是已发送且已被确认的数量     数量对应index要减去1
     // 已被确认的数量就是全部已经进入对端 ByteStream 的数量, 其实可以根据此直接推断出 checkpoint
     // 得到 checkpoint 后可以转换 当前 ackno 和 待确认的所有sqeno 为 absolute sequence number， 然后直接比较大小即可
-    uint64_t checkpoint = next_seqno_absolute() - bytes_in_flight() - 1;
+    // uint64_t checkpoint = next_seqno_absolute() - bytes_in_flight() - 1;
+    uint64_t checkpoint = _next_seqno;
     uint64_t abs_ack_no = unwrap(ackno, _isn, checkpoint);
+    _ackno = abs_ack_no;
 
     // ===== 有一个不可能的 ack 需要忽略的 test =======
     if(abs_ack_no > next_seqno_absolute()) {
@@ -110,6 +108,9 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
         // std::cerr << "impossible ack number" << std::endl;
         return;
     }
+    // 合法 ack 才更新 window
+    _window_sz = window_size;           // 这个是真实收到的size, 也包括0，0的话就不用计时器指数退避
+    // _win_size = window_size == 0 ? 1 : window_size;   // 这个是因为要保持通信, 假如对端发送 ack + win = 0, 那么理论上我们直接不用回都可以了，但为了保持通信，我们当作1处理
 
     while(!_wait_ack.empty()) {
         TCPSegment temp = _wait_ack.front();
@@ -122,7 +123,7 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
         // 只要前者大于等于后者,那么本段即被完全确认
         if(abs_ack_no >= abs_seg_no + temp.length_in_sequence_space()) {
             _flight_bytes -=  temp.length_in_sequence_space();
-            checkpoint += temp.length_in_sequence_space();
+            // checkpoint += temp.length_in_sequence_space();
             _wait_ack.pop();
             _newdata_acked = true;
         }
@@ -139,10 +140,13 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
             // 发送   "1234567"
             // 收到了 ack 但 ack 值 仍旧是 isn + 1 (即对 SYN 的确认)  但 window = 8！！！
             // 此时 我们发出去 一个单独的 FIN 数据包 
-            
+            /*
             // 所以我想大概是因为? 如果通知窗口大小如果 比重传队列的 第一个 segment 还要小的话就不发送任何东西 ? 
-            if(window_size <= temp.length_in_sequence_space())
+            if(_win_size <= temp.length_in_sequence_space())
                 _win_size = 0;
+            */
+
+            // 上面这些废话放在 fill_window 开头 特判了， 不再胡乱修改window size.....
             break;
         }
     }
@@ -156,9 +160,9 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
             // _segments_out.push(_wait_ack.front());
             _timer.start();
         }
-    }
-    if(_wait_ack.empty()) {
-        _timer.stop();
+        else{
+            _timer.stop();
+        }
     }
     // introduces in tutorial pdf, if advertised window size is greater than 0, try filling window again
 
@@ -168,7 +172,7 @@ void TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
     // ====== 我又来了。。。。。 Lab4 改回来的, 收到ack后要是有数据还是得fill进来的。系统并没有帮你调用
     // 但反正我也不知道之前 Lab3 造了什么孽这句注释掉就对了，但因为先改过了 Receiver 可能就是什么毛病吧.....
     // 反正打开后 Lab3是对的 Lab4的某个点也对上了
-    fill_window();      // 无所谓 window_size 是否为 0 了 因为会变为 1
+    // fill_window();      // 无所谓 window_size 是否为 0 了 因为会变为 1
 }
 
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
