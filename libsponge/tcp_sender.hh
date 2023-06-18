@@ -54,10 +54,10 @@ class TCPSender {
     同时 _win_size 在收到对端为 0 的 window_size 后会自动更新为 1
     但 _window_sz 仍旧是 0 ，这样一来在重传的时候就不会去 double time 了.
     */
-    uint16_t _win_size{1};        // 第一份SYN发送前 默认只发送 1 Byte
-    uint16_t _window_sz{1};
+    // size_t _win_size{1};        // 第一份SYN发送前 默认只发送 1 Byte
+    size_t _window_sz{1};
 
-    WrappingInt32 _ack{0};
+    uint64_t _ackno{0};
 
     // for bytes in flight calculating
     uint64_t _flight_bytes{0};
@@ -80,7 +80,7 @@ class TCPSender {
 
         public:
           Timer(const uint16_t retx_timeout):_init_timeout(retx_timeout), _timeout(retx_timeout){};
-          void start(){expired = false, active = true;};
+          void start(){expired = false, active = true, _cur_time = 0;};
           // if expired, return true and restransmit segments
           void tictoc(uint16_t win_size, unsigned int _tictoc_time, unsigned int& _consecutive_num) {
             if(active){
@@ -88,7 +88,6 @@ class TCPSender {
               if(_cur_time >= _timeout) {
                 active = false;
                 expire(win_size, _consecutive_num);
-                _cur_time = 0;
                 expired = true;
               }
             }
@@ -100,13 +99,11 @@ class TCPSender {
             }
           };
           void reset(){
-            expired = false;
-            _cur_time = 0;
             _timeout = _init_timeout;
           };
           void stop(){active = false;};
           bool isexpired(){return expired;};
-          unsigned int getCurtime(){return _cur_time;}; // for debugging
+          bool started(){return active;};
     };
   Timer _timer;
 
