@@ -1,4 +1,4 @@
-#include "socket.hh"
+#include "tcp_sponge_socket.hh"
 #include "util.hh"
 
 #include <cstdlib>
@@ -19,7 +19,7 @@ void get_URL(const string &host, const string &path) {
 
     // 根据Address类的构造方法进行构造
     Address addr(host, "http");
-    TCPSocket sock;
+    CS144TCPSocket sock;
     // 创建socket，连接地址
     sock.connect(addr);
 
@@ -34,6 +34,7 @@ void get_URL(const string &host, const string &path) {
     
     sock.close();
 
+    sock.wait_until_closed();
 
     cerr << "Function called: get_URL(" << host << ", " << path << ").\n";
     cerr << "Warning: get_URL() has not been implemented yet.\n";
