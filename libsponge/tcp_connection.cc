@@ -189,8 +189,8 @@ void TCPConnection::send_segments(){
         if(ackno.has_value()){
             seg.header().ack = true;
             seg.header().ackno = ackno.value();
+            seg.header().win = static_cast<uint16_t>(_receiver.window_size());
         }
-        seg.header().win = static_cast<uint16_t>(min(_receiver.window_size(), static_cast<size_t>(numeric_limits<uint16_t>::max())));
         //static_cast<uint16_t>(_receiver.window_size());
         _segments_out.push(seg);
         _sender.segments_out().pop();
@@ -214,8 +214,8 @@ void TCPConnection::send_rst_seg(){
     if(ackno.has_value()){
         seg.header().ack = true;
         seg.header().ackno = ackno.value();
+        seg.header().win = static_cast<uint16_t>(_receiver.window_size());
     }
-    seg.header().win = static_cast<uint16_t>(min(_receiver.window_size(), static_cast<size_t>(numeric_limits<uint16_t>::max())));
     _segments_out.push(seg);
 }
 
