@@ -36,6 +36,11 @@ void TCPSender::fill_window() {
     if(_set_fin) return;
     // 因为可能有重复的旧的 ack 我们需要进行判别
     if(_ackno + (_window_sz != 0 ? _window_sz : 1) <= _next_seqno) return;
+    /*
+    这里处理的情况就是,假如我们下一个要发送的 index 实际上是 100.
+    但给我们一个 early ackno 比如 90，又给我们一个window size是 30
+    那么此时只能当window size为 20来处理
+    */
     size_t _win_size = _ackno + (_window_sz != 0 ? _window_sz : 1) - next_seqno_absolute();
     /*
     -------------  First time: my own logic --------------
